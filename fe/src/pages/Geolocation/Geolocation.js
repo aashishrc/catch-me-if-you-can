@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Map, Marker, ZoomControl } from "pigeon-maps";
-import { withStyles } from "@material-ui/core/styles";
-import useGeolocation from "./useGeolocation";
+import { rgbToHex, withStyles } from "@material-ui/core/styles";
+import io from "socket.io-client";
 
 const styles = (theme) => ({
   root: {
@@ -21,88 +21,112 @@ const styles = (theme) => ({
   },
 });
 
+const markerColors = {
+  // Cop is red marker
+  'cop'  : rgbToHex('#ff0000'),
+
+  // Mafia is green marker
+  'mafia': rgbToHex('#000000') 
+};
+
+const markerColors2 = {
+  'cop':`rgb(255, 0, 0)`, // red
+  'mafia':`rgb(149, 188, 208)`  // blue
+};
+
+// Server address and port defined as env variables
+const server_address = `${process.env.REACT_APP_API_SERVICE_URL}`;
+
+// Establish websocket connection with Flask application
+const socket = io(server_address);
+
 function GeoLocation(props) {
-
-  // If location is allowed, fetch x,y co-ordinates returned by
-  // useEffect() hook in useGeolocation.js
-  const {
-    data: { latitude, longitude },
-  } = useGeolocation();
-
   // Set initial values for Latitude, Longitude, Heading, and Speed
-  const [Lat, setLat] = useState(null);
-  const [Lon, setLng] = useState(null);
+  const [Lat, setLat] = useState("Fetching Location");
+  const [Lon, setLng] = useState("Fetching Location");
   const [Hea, setHea] = useState(null);
   const [Spd, setSpd] = useState(null);
-  
+
   // Define the default zoom level
   const [zoom, setZoom] = useState(18);
 
-  // Define the default height 
-  const defaultHeight = 500;
+  // Define the default height
+  const defaultHeight = 600;
 
   // Define the default latitude and longitude values
-  const defaultLaitude = 42.33528042187331;
+  const defaultLatitude = 42.33528042187331;
   const defaultLongitude = -71.09702787206938;
 
   // Set the default center for the map
-  const [center, setCenter] = useState([defaultLaitude, defaultLongitude]);
+  const [center, setCenter] = useState([defaultLatitude, defaultLongitude]);
+
+  // Set default active cop players 
+  const [playersCop, setplayersCop] = useState({});
+
+  // Set default active cop players 
+  const [playersMafia, setplayersMafia] = useState({});
+  
+  // Default value (in milliseconds) for updateLocation 
+  // interval (1 second = 1000 ms)
+  const copUpdateDuration = 3000; // 3 seconds for Cop
+  const mafiaUpdateDuration = 6000; // 6 seconds for Mafia
+
+  // Default state for marker tooltips
+  const [tooltip, setTooltip] = useState({ 
+    visible: false, 
+    userId: null, 
+    latitude: null, 
+    longitude: null 
+  });
+
+  // Read cookie and return the required value
+  const readCookie = (name) => {
+    const cookies = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith(`${name}=`));
+    return cookies ? cookies.split("=")[1] : null;
+  };
 
   // Report player location (and any other data)
-  const reportPlayerLocation = async (userId, latitude, longitude) => {
-
-    // Organize the data to send in a dictionary
+  const reportPlayerLocation = useCallback((userId, role, latitude, longitude) => {
     const requestFields = {
       'id': userId,
+      'role': role,
       'lat': latitude,
       'lon': longitude
-    }
+    };
 
-    // Attempt to send the data to the Flask server
     try {
-
-      // URL of the Flask application and the route
-      const URI = "http://localhost:5000/location";
-
-      // Define the necessary data, along with the player
-      // data (as a JSON) to send to the Flask server. 
+      const URI = server_address.concat("/location");
       const requestConfiguration = {
-        method: 'POST',
+        method: "POST",
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
         },
         body: JSON.stringify(requestFields)
-      }
+      };
 
-      // Send the player details and wait for a response 
-      // (using async await)
-      const response = await fetch(URI, requestConfiguration);
+      const response = fetch(URI, requestConfiguration);
 
-      // Check if response received is HTTP 200 OK
       if (response.ok) {
         console.log("Server responded!");
-
-        // Try decoding the response data
-        try{
-          const responseData = await response.json();
+        try {
+          const responseData = response.json();
           console.log(responseData);
         } catch (error) {
-          alert("Error occured in responseData!");
+          alert("Error occurred in responseData!");
           console.error(error);
         }
-      }else{
-        console.log(response)
       }
     } catch (error) {
       alert("Error occurred in reportPlayerLocation!");
       console.error(error);
     }
-    
-  };
+  }, []);
 
-  // Function to update the location and report changes to Flask server
-  const updateLocation = () => {
+  const updateLocation = useCallback(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -110,8 +134,14 @@ function GeoLocation(props) {
           setLng(position.coords.longitude);
           setHea(position.coords.heading);
           setSpd(position.coords.speed);
+
           setCenter([position.coords.latitude, position.coords.longitude]);
-          reportPlayerLocation(1, position.coords.latitude, position.coords.longitude);
+          reportPlayerLocation(
+            readCookie('userId'), 
+            readCookie('role'),
+            position.coords.latitude, 
+            position.coords.longitude
+          );
         },
         (e) => {
           console.log(e);
@@ -120,55 +150,182 @@ function GeoLocation(props) {
     } else {
       console.log("GeoLocation not supported by your browser!");
     }
-    console.log("Updating postition now...")
+    console.log("Updating position now...")
+  }, [reportPlayerLocation]);
+
+  // UseEffect hook to update location every 'x' seconds
+  useEffect(() => {
+    const role = readCookie('role');
+    const interval = setInterval(updateLocation, role === 'cop' ? copUpdateDuration : mafiaUpdateDuration);
+    return () => clearInterval(interval);
+  }, [updateLocation]);
+
+  // UseEffect hook to broadcast location
+  useEffect(() => {
+    socket.on('cop_location_update', (data) => {
+      setplayersCop((prevUsers) => ({ ...prevUsers, ...data }));
+    });
+
+    socket.on('mafia_location_update', (data) => {
+      setplayersMafia((prevUsers) => ({ ...prevUsers, ...data }));
+    });
+
+    socket.on('all_users', (data) => {
+      setplayersCop(data);
+      setplayersMafia(data);
+    });
+
+    socket.on('game_over', (data) => {
+      // Display game outcome
+      alert(data.result);
+    });
+
+  }, [updateLocation]);
+
+  // UseEffect hook to broadcast location
+  useEffect(() => {
+    socket.on('cop_location_update', (data) => {
+      setplayersCop((prevUsers) => ({ ...prevUsers, ...data }));
+    });
+
+    socket.on('mafia_location_update', (data) => {
+      setplayersMafia((prevUsers) => ({ ...prevUsers, ...data }));
+    });
+
+    socket.on('all_users', (data) => {
+      setplayersCop(data);
+      setplayersMafia(data);
+    });
+
+    socket.on('game_over', (data) => {
+      // Display game outcome
+      alert(data.result);
+    });
+
+    return () => {
+      socket.off('cop_location_update');
+      socket.off('mafia_location_update');
+      socket.off('all_users');
+      socket.off('game_over');
+    };
+  }, []);
+
+  const mouseHoverActiveHandler = (userId, latitude, longitude) => {
+    setTooltip({ 
+      visible: true, 
+      userId, 
+      latitude, 
+      longitude 
+    });
   };
 
-  // UseEffect hook to update location every 10 seconds
-  useEffect(() => {
-
-    // Define the interval to update the players location
-    // Since the location fetching is handled by the updateLocation()
-    // call the method every 10 seconds (10 seconds = 10000 ms)
-    const interval = setInterval(updateLocation, 10000);
-
-    // Clear interval on component unmount
-    return () => clearInterval(interval);
-  }, []);
+  const mouseHoverInactiveHandler = () => {
+    setTooltip({ 
+      visible: false, 
+      userId: null, 
+      latitude: null, 
+      longitude: null 
+    });
+  };
 
   return (
     <div style={{ backgroundColor: "white", padding: 72 }}>
-      <button onClick={updateLocation}>Get Location</button>
-      <p>Latitude: {latitude}</p>
-      <p>Longitude: {longitude}</p>
+      <br></br>
 
-      {/* These are not used but defined above */}
-      {/* 'AND' these values with 'null' for now to hide them */}
-      {null && Lat && <p>Latitude: {Lat}</p>}
-      {null && Lon && <p>Longitude: {Lon}</p>}
-      {null && Hea && <p>Heading: {Hea}</p>}
-      {null && Spd && <p>Speed: {Spd}</p>}
+      <h2>
+        Player {
+          readCookie('userId').concat(" spawning as ").concat(readCookie('role'))
+        }
+      </h2>
+      <h3>
+        Player {
+          readCookie('userId').concat("'s coordinates:")
+        }
+      </h3>
+      <h3>
+        Latitude: {Lat}
+      </h3>
+      <h3>
+        Longitude: {Lon}
+      </h3>
 
-      {/* Render the map */}
       <h1>Map</h1>
       <Map
         height={defaultHeight}
         center={center}
         defaultZoom={zoom}
-        
-        // Recenter the map and apply the zoom values
         onBoundsChanged={({ center, zoom }) => {
           setCenter(center);
           setZoom(zoom);
         }}
       >
-        {/* Added 3 markers to represent 3 players on the map */}
-        <Marker width={50} anchor={[Lat || latitude, Lon || longitude]} />
-        <Marker width={50} anchor={[Lat ? Lat + 0.2 : latitude + 0.2, Lon ? Lon + 0.2 : longitude + 0.2]} />
-        <Marker width={50} anchor={[Lat ? Lat - 0.2 : latitude - 0.2, Lon ? Lon - 0.2 : longitude - 0.2]} />
+        {Object.keys(playersCop).map((userId) => {
+          const user = playersCop[userId];
+          const color = markerColors2[playersCop[userId].role];
+          console.log(`Marker for user ${userId}:`, user, `Color: ${color}`);
+          return (
+            <Marker
+              key={userId}
+              width={50}
+              color={color}
+              anchor={[playersCop[userId].latitude, playersCop[userId].longitude]}
+              onMouseOver={
+                () => mouseHoverActiveHandler(
+                  userId, 
+                  playersCop[userId].latitude, 
+                  playersCop[userId].longitude
+                )
+              }
+              onMouseOut={mouseHoverInactiveHandler}
+            />
+          );
+        })}
+        {Object.keys(playersMafia).map((userId) => {
+          const user = playersMafia[userId];
+          const color = markerColors2[playersMafia[userId].role];
+          const latitude = Number(playersMafia[userId].latitude);
+          const longitude = Number(playersMafia[userId].longitude);
+          console.log(`Marker for user ${userId}:`, user, `Color: ${color}`);
+          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
+          return (
+            <Marker
+              key={userId}
+              width={50}
+              color={color}
+              anchor={[latitude, longitude]}
+              onMouseOver={
+                () => mouseHoverActiveHandler(
+                  userId, 
+                  playersMafia[userId].latitude, 
+                  playersMafia[userId].longitude
+                )
+              }
+              onMouseOut={mouseHoverInactiveHandler}
+            />
+          );
+        })}
 
-        {/* Add default +/- buttons to allow zoom controls on the map */}
         <ZoomControl />
       </Map>
+
+      {tooltip.visible && (
+        <div
+          style={{
+            position: 'absolute',
+            backgroundColor: 'white',
+            padding: '5px',
+            border: '1px solid black',
+            borderRadius: '3px',
+            top: '100px',
+            left: '100px',
+          }}
+        >
+          {/* <p>User ID: {tooltip.userId}</p>
+          <p>Latitude: {tooltip.latitude}</p>
+          <p>Longitude: {tooltip.longitude}</p>
+          <p>Role: {users[tooltip.userId].role}</p> */}
+        </div>
+      )}
     </div>
   );
 }
