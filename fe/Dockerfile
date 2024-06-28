@@ -38,8 +38,8 @@ FROM nginx
 #RUN rm -rf /etc/nginx/conf.d
 #COPY conf /etc/nginx
 
-# install envsubst
-RUN apk add --no-cache gettext
+# # install envsubst
+# RUN apk add --no-cache gettext
 
 # copy static files
 # COPY --from=builder /usr/src/app/build /usr/share/nginx/html
