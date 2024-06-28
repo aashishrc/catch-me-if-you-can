@@ -37,6 +37,7 @@ phases:
       - rm -f "containerd.deb" "docker_ce.deb" "docker_ce_cli.deb" "docker_buildx_plugin.deb" "docker_compose_plugin.deb"
       # Check if Docker is installed and running
       - echo "Running docker 'hello-world' to check if installation was successful..."
+      - docker login -u $docker_username -p $docker_password
       - docker run hello-world
   pre_build:
     commands:
