@@ -143,9 +143,9 @@ export default function Dashboard() {
     history.push('/signin');
 
     // Since cookies are still visible, force page reload
-    setTimeout(() => {
-      window.location.reload();
-    }, 100);
+    // setTimeout(() => {
+    //   window.location.reload();
+    // }, 100);
   };
 
   return (
@@ -171,6 +171,20 @@ export default function Dashboard() {
 
             <div>
               {/* The Sign-in icon on the AppBar */}
+              {/* The Geolocation icon on the AppBar */}
+              {
+                  <IconButton
+                    edge="end"
+                    color="inherit"
+                    aria-label="geolocation"
+                    to="/geolocation"
+                    component={Link}
+                    className={clsx(classes.appBarButton)}
+                  >
+                    <AccountCircleIcon className={classes.appBarTextButtonSpacing}/>
+                    {'Geolocation'}
+                  </IconButton>
+              }
               {
                 isSignedIn ? (
                   <IconButton
