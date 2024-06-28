@@ -1,5 +1,6 @@
 # catch-me-if-you-can game
 A fun little game using React, Flask, Redis, and OpenStreetMap
+Cloned from https://github.com/kumarsandeep567/catchme-game/tree/test
 
 # Installation and Setup
 
@@ -27,6 +28,7 @@ This will start your Flask backend server and should show like this:
 
 Note down the IP address the Flask app is runing on. This will be the value of REACT_APP_API_SERVICE_URL in your .env file (create .env file inside 'fe' folder) and add the a similar entry 
 REACT_APP_API_SERVICE_URL=http://10.0.0.209:5000  //Replace with your Flask URL
+BACKEND_URL=redis://localhost:6379
 
 #### Frontend
 
