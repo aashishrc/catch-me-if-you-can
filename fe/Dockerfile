@@ -38,22 +38,22 @@ FROM nginx
 #RUN rm -rf /etc/nginx/conf.d
 #COPY conf /etc/nginx
 
-# # install envsubst
-# RUN apk add --no-cache gettext
+# install envsubst
+RUN apt-get update && apt-get install -y gettext-base
 
 # copy static files
-# COPY --from=builder /usr/src/app/build /usr/share/nginx/html
-# COPY ./nginx.conf.template /etc/nginx/nginx.conf.template
+COPY --from=builder /usr/src/app/build /usr/share/nginx/html
+COPY ./nginx.conf.template /etc/nginx/nginx.conf.template
 
 # set environment variable for backend URL
 ENV REACT_APP_API_SERVICE_URL=${REACT_APP_API_SERVICE_URL}
 
 # substitute environment variable and run nginx
-# CMD ["/bin/sh", "-c", "envsubst '${REACT_APP_API_SERVICE_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+CMD ["/bin/sh", "-c", "envsubst '${REACT_APP_API_SERVICE_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
 
-# copy static files
-COPY --from=builder /usr/src/app/build /usr/share/nginx/html
-COPY ./nginx.conf /etc/nginx/nginx.conf
+# # copy static files
+# COPY --from=builder /usr/src/app/build /usr/share/nginx/html
+# COPY ./nginx.conf /etc/nginx/nginx.conf
 # expose port
 EXPOSE 80
 
